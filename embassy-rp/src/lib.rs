@@ -12,12 +12,14 @@ pub mod i2c;
 pub mod interrupt;
 pub mod rom_data;
 pub mod rtc;
+pub mod pwm;
 pub mod spi;
 #[cfg(feature = "time-driver")]
 pub mod timer;
 pub mod uart;
 #[cfg(feature = "nightly")]
 pub mod usb;
+pub mod pio;
 
 mod clocks;
 pub mod flash;
@@ -70,6 +72,15 @@ embassy_hal_common::peripherals! {
     PIN_QSPI_SD1,
     PIN_QSPI_SD2,
     PIN_QSPI_SD3,
+
+    PWM_SLICE0,
+    PWM_SLICE1,
+    PWM_SLICE2,
+    PWM_SLICE3,
+    PWM_SLICE4,
+    PWM_SLICE5,
+    PWM_SLICE6,
+    PWM_SLICE7,
 
     UART0,
     UART1,
