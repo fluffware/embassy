@@ -184,7 +184,7 @@ impl<const SLICE: u8> ConfigSlice<SLICE> {
         (ConfigChannel {}, ConfigChannel {})
     }
 
-    pub fn any(self) -> AnyConfigSlice
+    pub fn degrade(self) -> AnyConfigSlice
     {
 	AnyConfigSlice{slice: SLICE}
     }
@@ -238,7 +238,7 @@ impl<const SLICE: u8, const CHANNEL: u8, const PIN_SET: bool> ConfigChannel<SLIC
         self
     }
 
-    pub fn any(self) -> AnyConfigChannel<PIN_SET> {
+    pub fn degrade(self) -> AnyConfigChannel<PIN_SET> {
 	AnyConfigChannel{slice: SLICE, channel: CHANNEL}
     }
 }
@@ -330,7 +330,7 @@ impl<const SLICE: u8, const CHANNEL: u8> EnabledChannel<SLICE, CHANNEL> {
             _ => {}
         }
     }
-    pub fn any(self) -> AnyEnabledChannel
+    pub fn degrade(self) -> AnyEnabledChannel
     {
 	AnyEnabledChannel{slice: SLICE, channel: CHANNEL}
     }
@@ -356,13 +356,6 @@ pub trait Slice<const SLICE: u8> {
         Self: Sized,
     {
         ConfigSlice {}
-    }
-
-    fn any_config(self) -> AnyConfigSlice
-    where
-        Self: Sized,
-    {
-        AnyConfigSlice { slice: SLICE }
     }
 }
 
