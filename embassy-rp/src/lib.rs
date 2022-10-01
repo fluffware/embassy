@@ -107,6 +107,7 @@ embassy_hal_common::peripherals! {
     DMA_CH11,
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     USB,
 
     RTC,
@@ -121,6 +122,14 @@ embassy_hal_common::peripherals! {
     
 >>>>>>> d8918af0 (Basic support for PIO)
 >>>>>>> 27a4871a (Basic support for PIO)
+=======
+    PIO0,
+    PIO1,
+
+    USB,
+
+    RTC,
+>>>>>>> 7c680f87 (Fixed rebase conflicts)
 }
 
 #[link_section = ".boot2"]

@@ -579,10 +579,10 @@ impl<PIO: PioInstanceTrait, const SM: u8> PioStateMachine<PIO, SM> {
             pin.io().ctrl().write(|w| {
                 w.set_funcsel(
                     if PIO::PIO_NO == 1 {
-                        pac::io::vals::Gpio0CtrlFuncsel::PIO1_0
+                        pac::io::vals::Gpio0ctrlFuncsel::PIO1_0
                     } else {
                         // PIO == 0
-                        pac::io::vals::Gpio0CtrlFuncsel::PIO0_0
+                        pac::io::vals::Gpio0ctrlFuncsel::PIO0_0
                     }
                     .0,
                 );
