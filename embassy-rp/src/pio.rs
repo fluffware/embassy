@@ -6,8 +6,8 @@ use core::task::{Context, Poll};
 use embassy_cortex_m::interrupt::{Interrupt, InterruptExt};
 use embassy_sync::waitqueue::AtomicWaker;
 
-use crate::gpio::sealed::Pin;
-use crate::gpio::{Drive, Pull, SlewRate};
+use crate::gpio::sealed::Pin as SealedPin;
+use crate::gpio::{Drive, Pin, Pull, SlewRate};
 use crate::{interrupt, pac, peripherals};
 
 const PIOS: [&pac::pio::Pio; 2] = [&pac::PIO0, &pac::PIO1];
@@ -354,9 +354,13 @@ impl<PIO: PioInstanceTrait> PioPin<PIO> {
             });
         }
     }
+
+    fn pin(&self) -> u8 {
+        self._pin()
+    }
 }
 
-impl<PIO: PioInstanceTrait> Pin for PioPin<PIO> {
+impl<PIO: PioInstanceTrait> SealedPin for PioPin<PIO> {
     fn pin_bank(&self) -> u8 {
         self.pin_bank
     }

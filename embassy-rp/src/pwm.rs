@@ -1,7 +1,8 @@
 use paste::paste;
 
 use super::gpio::{sealed, AnyPin};
-use crate::gpio::sealed::Pin;
+use crate::gpio::sealed::Pin as SealedPin;
+use crate::gpio::Pin;
 use crate::pac::PWM;
 use crate::{pac, peripherals};
 
