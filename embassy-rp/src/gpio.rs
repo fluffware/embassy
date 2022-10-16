@@ -490,7 +490,7 @@ impl<'d, T: Pin> Flex<'d, T> {
         }
     }
 
-      // Set the pin's slew rate.
+    // Set the pin's slew rate.
     #[inline]
     pub fn set_slew_rate(&mut self, slew_rate: SlewRate) {
         unsafe {
@@ -499,7 +499,6 @@ impl<'d, T: Pin> Flex<'d, T> {
             });
         }
     }
-
 
     /// Put the pin into input mode.
     ///
