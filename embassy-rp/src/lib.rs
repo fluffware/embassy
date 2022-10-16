@@ -10,9 +10,10 @@ pub mod dma;
 pub mod gpio;
 pub mod i2c;
 pub mod interrupt;
+pub mod pio;
+pub mod pwm;
 pub mod rom_data;
 pub mod rtc;
-pub mod pwm;
 pub mod spi;
 #[cfg(feature = "time-driver")]
 pub mod timer;
