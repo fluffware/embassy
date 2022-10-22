@@ -10,7 +10,12 @@ pub mod dma;
 pub mod gpio;
 pub mod i2c;
 pub mod interrupt;
+
+#[cfg(feature = "pio")]
 pub mod pio;
+#[cfg(feature = "pio")]
+pub mod pio_instr_util;
+
 pub mod pwm;
 pub mod rom_data;
 pub mod rtc;
