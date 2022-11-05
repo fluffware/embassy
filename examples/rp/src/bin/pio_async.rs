@@ -9,7 +9,7 @@ use embassy_rp::pio_instr_util;
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::task]
-async fn pio_task_sm0(sm: PioStateMachineInstance<Pio0, Sm0>, pin: AnyPin) {
+async fn pio_task_sm0(mut sm: PioStateMachineInstance<Pio0, Sm0>, pin: AnyPin) {
     // Setup sm0
 
     // Send data serially to pin
@@ -26,7 +26,7 @@ async fn pio_task_sm0(sm: PioStateMachineInstance<Pio0, Sm0>, pin: AnyPin) {
     let pio_pins = [&out_pin];
     sm.set_out_pins(&pio_pins);
     sm.write_instr(origin as usize, &prg.program.code);
-    pio_instr_util::exec_jmp(&sm, origin);
+    pio_instr_util::exec_jmp(&mut sm, origin);
     sm.set_clkdiv((125e6 / 20.0 / 2e2 * 256.0) as u32);
     sm.set_set_range(0, 1);
     sm.set_wrap(prg.program.wrap.source + origin, prg.program.wrap.target + origin);
@@ -44,7 +44,7 @@ async fn pio_task_sm0(sm: PioStateMachineInstance<Pio0, Sm0>, pin: AnyPin) {
 }
 
 #[embassy_executor::task]
-async fn pio_task_sm1(sm: PioStateMachineInstance<Pio0, Sm1>) {
+async fn pio_task_sm1(mut sm: PioStateMachineInstance<Pio0, Sm1>) {
     // Setupm sm1
 
     // Read 0b10101 repeatedly until ISR is full
@@ -52,7 +52,7 @@ async fn pio_task_sm1(sm: PioStateMachineInstance<Pio0, Sm1>) {
 
     let origin = prg.program.origin.unwrap_or(0);
     sm.write_instr(origin as usize, &prg.program.code);
-    pio_instr_util::exec_jmp(&sm, origin);
+    pio_instr_util::exec_jmp(&mut sm, origin);
     sm.set_clkdiv((125e6 / 2e3 * 256.0) as u32);
     sm.set_set_range(0, 0);
     sm.set_wrap(prg.program.wrap.source + origin, prg.program.wrap.target + origin);
@@ -66,7 +66,7 @@ async fn pio_task_sm1(sm: PioStateMachineInstance<Pio0, Sm1>) {
 }
 
 #[embassy_executor::task]
-async fn pio_task_sm2(sm: PioStateMachineInstance<Pio0, Sm2>) {
+async fn pio_task_sm2(mut sm: PioStateMachineInstance<Pio0, Sm2>) {
     // Setup sm2
 
     // Repeatedly trigger IRQ 3
@@ -83,7 +83,7 @@ async fn pio_task_sm2(sm: PioStateMachineInstance<Pio0, Sm2>) {
 
     sm.write_instr(origin as usize, &prg.program.code);
     sm.set_wrap(prg.program.wrap.source + origin, prg.program.wrap.target + origin);
-    pio_instr_util::exec_jmp(&sm, origin);
+    pio_instr_util::exec_jmp(&mut sm, origin);
     sm.set_clkdiv((125e6 / 2e3 * 256.0) as u32);
     sm.set_enable(true);
     loop {

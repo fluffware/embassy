@@ -116,14 +116,14 @@ unsafe fn PIO1_IRQ_0() {
 }
 
 /// Future that waits for TX-FIFO to become writable
-pub struct FifoOutFuture<'a, PIO: PioInstance, SM: PioStateMachine> {
-    sm: &'a SM,
+pub struct FifoOutFuture<'a, PIO: PioInstance, SM: PioStateMachine + Unpin> {
+    sm: &'a mut SM,
     pio: PhantomData<PIO>,
     value: u32,
 }
 
-impl<'a, PIO: PioInstance, SM: PioStateMachine> FifoOutFuture<'a, PIO, SM> {
-    pub fn new(sm: &'a SM, value: u32) -> Self {
+impl<'a, PIO: PioInstance, SM: PioStateMachine + Unpin> FifoOutFuture<'a, PIO, SM> {
+    pub fn new(sm: &'a mut SM, value: u32) -> Self {
         unsafe {
             critical_section::with(|_| {
                 let irq = PIO::IrqOut::steal();
@@ -140,11 +140,12 @@ impl<'a, PIO: PioInstance, SM: PioStateMachine> FifoOutFuture<'a, PIO, SM> {
     }
 }
 
-impl<'d, PIO: PioInstance, SM: PioStateMachine> Future for FifoOutFuture<'d, PIO, SM> {
+impl<'d, PIO: PioInstance, SM: PioStateMachine + Unpin> Future for FifoOutFuture<'d, PIO, SM> {
     type Output = ();
     fn poll(self: FuturePin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         //debug!("Poll {},{}", PIO::PIO_NO, SM);
-        if self.sm.try_push_tx(self.value) {
+	let value = self.value;
+        if self.get_mut().sm.try_push_tx(value) {
             Poll::Ready(())
         } else {
             FIFO_OUT_WAKERS[PIO::PIO_NO as usize][SM::Sm::SM_NO as usize].register(cx.waker());
@@ -164,7 +165,7 @@ impl<'d, PIO: PioInstance, SM: PioStateMachine> Future for FifoOutFuture<'d, PIO
     }
 }
 
-impl<'d, PIO: PioInstance, SM: PioStateMachine> Drop for FifoOutFuture<'d, PIO, SM> {
+impl<'d, PIO: PioInstance, SM: PioStateMachine + Unpin> Drop for FifoOutFuture<'d, PIO, SM> {
     fn drop(&mut self) {
         unsafe {
             critical_section::with(|_| {
@@ -178,12 +179,12 @@ impl<'d, PIO: PioInstance, SM: PioStateMachine> Drop for FifoOutFuture<'d, PIO, 
 
 /// Future that waits for RX-FIFO to become readable
 pub struct FifoInFuture<'a, PIO: PioInstance, SM: PioStateMachine> {
-    sm: &'a SM,
+    sm: &'a mut SM,
     pio: PhantomData<PIO>,
 }
 
 impl<'a, PIO: PioInstance, SM: PioStateMachine> FifoInFuture<'a, PIO, SM> {
-    pub fn new(sm: &'a SM) -> Self {
+    pub fn new(sm: &'a mut SM) -> Self {
         unsafe {
             critical_section::with(|_| {
                 let irq = PIO::IrqIn::steal();
@@ -201,7 +202,7 @@ impl<'a, PIO: PioInstance, SM: PioStateMachine> FifoInFuture<'a, PIO, SM> {
 
 impl<'d, PIO: PioInstance, SM: PioStateMachine> Future for FifoInFuture<'d, PIO, SM> {
     type Output = u32;
-    fn poll(self: FuturePin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: FuturePin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         //debug!("Poll {},{}", PIO::PIO_NO, SM);
         if let Some(v) = self.sm.try_pull_rx() {
             Poll::Ready(v)
@@ -358,6 +359,15 @@ impl<PIO: PioInstance> PioPin<PIO> {
         }
     }
 
+    pub fn set_input_sync_bypass<'a>(&mut self, bypass: bool) {
+        let mask = 1 << self.pin();
+	unsafe {
+            PIOS[PIO::PIO_NO as usize]
+                .input_sync_bypass()
+                .modify(|w| *w = if bypass {*w & !mask} else  {*w | mask});
+        }
+    }
+
     fn pin(&self) -> u8 {
         self._pin()
     }
@@ -379,7 +389,7 @@ impl<PIO: PioInstance, SM: SmInstance> PioStateMachine for PioStateMachineInstan
     type Sm = SM;
 }
 
-pub trait PioStateMachine: Sized {
+pub trait PioStateMachine: Sized + Unpin{
     type Pio: PioInstance;
     type Sm: SmInstance;
     fn pio_no(&self) -> u8 {
@@ -391,7 +401,7 @@ pub trait PioStateMachine: Sized {
         Self::Sm::SM_NO
     }
 
-    fn restart(&self) {
+    fn restart(&mut self) {
         let _ = self;
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
@@ -399,7 +409,7 @@ pub trait PioStateMachine: Sized {
                 .modify(|w| w.set_sm_restart(1u8 << Self::Sm::SM_NO));
         }
     }
-    fn set_enable(&self, enable: bool) {
+    fn set_enable(&mut self, enable: bool) {
         let _ = self;
         let mask = 1u8 << Self::Sm::SM_NO;
         unsafe {
@@ -446,7 +456,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn push_tx(&self, v: u32) {
+    fn push_tx(&mut self, v: u32) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .txf(Self::Sm::SM_NO as usize)
@@ -454,7 +464,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn try_push_tx(&self, v: u32) -> bool {
+    fn try_push_tx(&mut self, v: u32) -> bool {
         if self.is_tx_full() {
             return false;
         }
@@ -462,18 +472,18 @@ pub trait PioStateMachine: Sized {
         true
     }
 
-    fn pull_rx(&self) -> u32 {
+    fn pull_rx(&mut self) -> u32 {
         unsafe { PIOS[Self::Pio::PIO_NO as usize].rxf(Self::Sm::SM_NO as usize).read() }
     }
 
-    fn try_pull_rx(&self) -> Option<u32> {
+    fn try_pull_rx(&mut self) -> Option<u32> {
         if self.is_rx_empty() {
             return None;
         }
         Some(self.pull_rx())
     }
 
-    fn set_clkdiv(&self, div_x_256: u32) {
+    fn set_clkdiv(&mut self, div_x_256: u32) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -493,7 +503,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn clkdiv_restart(&self) {
+    fn clkdiv_restart(&mut self) {
         let _ = self;
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
@@ -521,7 +531,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_side_pindir(&self, pindir: bool) {
+    fn set_side_pindir(&mut self, pindir: bool) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -563,7 +573,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_fifo_join(&self, join: FifoJoin) {
+    fn set_fifo_join(&mut self, join: FifoJoin) {
         let (rx, tx) = match join {
             FifoJoin::Duplex => (false, false),
             FifoJoin::RxOnly => (true, false),
@@ -596,7 +606,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn clear_fifos(&self) {
+    fn clear_fifos(&mut self) {
         // Toggle FJOIN_RX to flush FIFOs
         unsafe {
             let shiftctrl = PIOS[Self::Pio::PIO_NO as usize]
@@ -611,7 +621,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_pull_threshold(&self, threshold: u8) {
+    fn set_pull_threshold(&mut self, threshold: u8) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -629,7 +639,7 @@ pub trait PioStateMachine: Sized {
             r.pull_thresh()
         }
     }
-    fn set_push_threshold(&self, threshold: u8) {
+    fn set_push_threshold(&mut self, threshold: u8) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -648,7 +658,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_out_shift_dir(&self, dir: ShiftDirection) {
+    fn set_out_shift_dir(&mut self, dir: ShiftDirection) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -671,7 +681,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_in_shift_dir(&self, dir: ShiftDirection) {
+    fn set_in_shift_dir(&mut self, dir: ShiftDirection) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -694,7 +704,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_autopull(&self, auto: bool) {
+    fn set_autopull(&mut self, auto: bool) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -713,7 +723,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_autopush(&self, auto: bool) {
+    fn set_autopush(&mut self, auto: bool) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -741,7 +751,7 @@ pub trait PioStateMachine: Sized {
             r.addr()
         }
     }
-    fn set_sideset_count(&self, count: u8) {
+    fn set_sideset_count(&mut self, count: u8) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -780,7 +790,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_sideset_base_pin(&self, base_pin: &PioPin<Self::Pio>) {
+    fn set_sideset_base_pin(&mut self, base_pin: &PioPin<Self::Pio>) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -800,7 +810,7 @@ pub trait PioStateMachine: Sized {
     }
 
     /// Set the range of out pins affected by a set instruction.
-    fn set_set_range(&self, base: u8, count: u8) {
+    fn set_set_range(&mut self, base: u8, count: u8) {
         assert!(base + count < 32);
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
@@ -824,7 +834,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_in_base_pin(&self, base: &PioPin<Self::Pio>) {
+    fn set_in_base_pin(&mut self, base: &PioPin<Self::Pio>) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -843,7 +853,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_out_range(&self, base: u8, count: u8) {
+    fn set_out_range(&mut self, base: u8, count: u8) {
         assert!(base + count < 32);
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
@@ -867,7 +877,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn set_out_pins<'a, 'b: 'a>(&'a self, pins: &'b [&PioPin<Self::Pio>]) {
+    fn set_out_pins<'a, 'b: 'a>(&'a mut self, pins: &'b [&PioPin<Self::Pio>]) {
         let count = pins.len();
         assert!(count >= 1);
         let start = pins[0].pin() as usize;
@@ -878,7 +888,7 @@ pub trait PioStateMachine: Sized {
         self.set_out_range(start as u8, count as u8);
     }
 
-    fn set_set_pins<'a, 'b: 'a>(&'a self, pins: &'b [&PioPin<Self::Pio>]) {
+    fn set_set_pins<'a, 'b: 'a>(&'a mut  self, pins: &'b [&PioPin<Self::Pio>]) {
         let count = pins.len();
         assert!(count >= 1);
         let start = pins[0].pin() as usize;
@@ -899,7 +909,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn exec_instr(&self, instr: u16) {
+    fn exec_instr(&mut self, instr: u16) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .sm(Self::Sm::SM_NO as usize)
@@ -908,7 +918,7 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn write_instr(&self, start: usize, instrs: &[u16]) {
+    fn write_instr(&mut self, start: usize, instrs: &[u16]) {
         let _ = self;
         write_instr(
             Self::Pio::PIO_NO,
@@ -926,17 +936,17 @@ pub trait PioStateMachine: Sized {
         }
     }
 
-    fn clear_irq(&self, irq_no: usize) {
+    fn clear_irq(&mut self, irq_no: usize) {
         assert!(irq_no < 8);
         unsafe { PIOS[Self::Pio::PIO_NO as usize].irq().write(|w| w.set_irq(1 << irq_no)) }
     }
 
-    fn wait_push<'a>(&'a self, value: u32) -> FifoOutFuture<'a, Self::Pio, Self> {
-        FifoOutFuture::new(&self, value)
+    fn wait_push<'a>(&'a mut self, value: u32) -> FifoOutFuture<'a, Self::Pio, Self> {
+        FifoOutFuture::new(self, value)
     }
 
-    fn wait_pull<'a>(&'a self) -> FifoInFuture<'a, Self::Pio, Self> {
-        FifoInFuture::new(&self)
+    fn wait_pull<'a>(&'a mut self) -> FifoInFuture<'a, Self::Pio, Self> {
+        FifoInFuture::new(self)
     }
 
     fn wait_irq(&self, irq_no: u8) -> IrqFuture<Self::Pio> {
@@ -1037,21 +1047,21 @@ fn write_instr(pio_no: u8, start: usize, instrs: &[u16], mem_user: u32) {
 pub trait PioCommon: Sized {
     type Pio: PioInstance;
 
-    fn write_instr(&self, start: usize, instrs: &[u16]) {
+    fn write_instr(&mut self, start: usize, instrs: &[u16]) {
         let _ = self;
         write_instr(Self::Pio::PIO_NO, start, instrs, MEM_USED_BY_COMMON);
     }
 
-    fn clear_irq(&self, irq_no: usize) {
+    fn clear_irq(&mut self, irq_no: usize) {
         assert!(irq_no < 8);
         unsafe { PIOS[Self::Pio::PIO_NO as usize].irq().write(|w| w.set_irq(1 << irq_no)) }
     }
 
-    fn clear_irqs(&self, mask: u8) {
+    fn clear_irqs(&mut self, mask: u8) {
         unsafe { PIOS[Self::Pio::PIO_NO as usize].irq().write(|w| w.set_irq(mask)) }
     }
 
-    fn force_irq(&self, irq_no: usize) {
+    fn force_irq(&mut self, irq_no: usize) {
         assert!(irq_no < 8);
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
@@ -1060,20 +1070,12 @@ pub trait PioCommon: Sized {
         }
     }
 
-    fn set_input_sync_bypass<'a>(&'a self, bypass: u32, mask: u32) {
+    fn set_input_sync_bypass<'a>(&'a mut self, bypass: u32, mask: u32) {
         unsafe {
             PIOS[Self::Pio::PIO_NO as usize]
                 .input_sync_bypass()
                 .modify(|w| *w = (*w & !mask) | (bypass & mask));
         }
-    }
-
-    fn set_input_sync_bypass_pins<'a>(&self, pins: &[&PioPin<Self::Pio>]) {
-        let mut bypass = 0;
-        for pin in pins {
-            bypass |= 1 << pin.pin();
-        }
-        self.set_input_sync_bypass(bypass, bypass);
     }
 
     fn get_input_sync_bypass(&self) -> u32 {
@@ -1084,7 +1086,7 @@ pub trait PioCommon: Sized {
 // Identifies a specific state machine inside a PIO device
 pub struct SmInstanceBase<const SM_NO: u8> {}
 
-pub trait SmInstance {
+pub trait SmInstance: Unpin {
     const SM_NO: u8;
 }
 
@@ -1136,7 +1138,7 @@ pub trait PioPeripherial: Sized {
 // Identifies a specific PIO device
 pub struct PioInstanceBase<const PIO_NO: u8> {}
 
-pub trait PioInstance {
+pub trait PioInstance: Unpin{
     const PIO_NO: u8;
     type IrqOut: Interrupt;
     type IrqIn: Interrupt;
