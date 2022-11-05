@@ -23,11 +23,8 @@ pub mod spi;
 #[cfg(feature = "time-driver")]
 pub mod timer;
 pub mod uart;
-
 #[cfg(feature = "nightly")]
 pub mod usb;
-
-pub mod pio;
 
 mod clocks;
 pub mod flash;
@@ -112,30 +109,14 @@ embassy_hal_common::peripherals! {
     DMA_CH10,
     DMA_CH11,
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     USB,
 
     RTC,
-<<<<<<< HEAD
 
     FLASH,
-=======
-=======
+
     PIO0,
     PIO1,
-
-    
->>>>>>> d8918af0 (Basic support for PIO)
->>>>>>> 27a4871a (Basic support for PIO)
-=======
-    PIO0,
-    PIO1,
-
-    USB,
-
-    RTC,
->>>>>>> 7c680f87 (Fixed rebase conflicts)
 }
 
 #[link_section = ".boot2"]
