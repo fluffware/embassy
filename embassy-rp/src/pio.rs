@@ -125,11 +125,12 @@ pub struct FifoOutFuture<'a, PIO: PioInstance, SM: PioStateMachine> {
 impl<'a, PIO: PioInstance, SM: PioStateMachine> FifoOutFuture<'a, PIO, SM> {
     pub fn new(sm: &'a SM, value: u32) -> Self {
         unsafe {
-            let irq = PIO::IrqOut::steal();
-            irq.disable();
-            irq.set_priority(interrupt::Priority::P3);
+            critical_section::with(|_| {
+                let irq = PIO::IrqOut::steal();
+                irq.set_priority(interrupt::Priority::P3);
 
-            irq.enable();
+                irq.enable();
+            });
         }
         FifoOutFuture {
             sm,
@@ -184,11 +185,12 @@ pub struct FifoInFuture<'a, PIO: PioInstance, SM: PioStateMachine> {
 impl<'a, PIO: PioInstance, SM: PioStateMachine> FifoInFuture<'a, PIO, SM> {
     pub fn new(sm: &'a SM) -> Self {
         unsafe {
-            let irq = PIO::IrqIn::steal();
-            irq.disable();
-            irq.set_priority(interrupt::Priority::P3);
+            critical_section::with(|_| {
+                let irq = PIO::IrqIn::steal();
+                irq.set_priority(interrupt::Priority::P3);
 
-            irq.enable();
+                irq.enable();
+            });
         }
         FifoInFuture {
             sm,
@@ -242,11 +244,12 @@ pub struct IrqFuture<PIO: PioInstance> {
 impl<'a, PIO: PioInstance> IrqFuture<PIO> {
     pub fn new(irq_no: u8) -> Self {
         unsafe {
-            let irq = PIO::IrqSm::steal();
-            irq.disable();
-            irq.set_priority(interrupt::Priority::P3);
+            critical_section::with(|_| {
+                let irq = PIO::IrqSm::steal();
+                irq.set_priority(interrupt::Priority::P3);
 
-            irq.enable();
+                irq.enable();
+            });
         }
         IrqFuture {
             pio: PhantomData::default(),
@@ -1017,7 +1020,11 @@ impl<PIO: PioInstance> PioCommon for PioCommonInstance<PIO> {
 fn write_instr(pio_no: u8, start: usize, instrs: &[u16], mem_user: u32) {
     for (i, instr) in instrs.iter().enumerate() {
         let addr = (i + start) as u8;
-        assert!(instr_mem_is_free(pio_no, addr), "Trying to write already used PIO instruction memory at {}", addr);
+        assert!(
+            instr_mem_is_free(pio_no, addr),
+            "Trying to write already used PIO instruction memory at {}",
+            addr
+        );
         unsafe {
             PIOS[pio_no as usize].instr_mem(addr as usize).write(|w| {
                 w.set_instr_mem(*instr);
